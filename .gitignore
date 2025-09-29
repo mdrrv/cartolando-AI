@@ -1,0 +1,6 @@
+# Arquivos temporários e de ambiente
+.env
+__pycache__/
+*.pyc
+data/
+.vscode/
