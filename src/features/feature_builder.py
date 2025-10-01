@@ -8,23 +8,52 @@ def gerar_features_para_modelo(engine):
     print("\\nGerando features para o modelo (via Python/Pandas)...")
 
     # 1. Buscar dados brutos
-    query_historico = "SELECT * FROM cartola_2025.pontuacao_rodada;"
-    df_historico = pd.read_sql(query_historico, engine)
+    query_rodada_aberta = "SELECT MAX(rodada_id) FROM cartola_2025.mercado_atletas WHERE status_id = 7"
+    rodada_aberta = pd.read_sql(text(query_rodada_aberta), engine).iloc[0, 0]
 
-    query_partidas = "SELECT * FROM cartola_2025.partidas;"
-    df_partidas = pd.read_sql(query_partidas, engine)
+    if pd.isna(rodada_aberta):
+        print("Nenhum atleta com status 7 encontrado para identificar a rodada aberta.")
+        return pd.DataFrame(), pd.DataFrame()
+
+    rodada_aberta_int = int(rodada_aberta)
+
+    query_historico = "SELECT * FROM cartola_2025.pontuacao_rodada WHERE rodada < :rodada_aberta"
+    df_historico = pd.read_sql(text(query_historico), engine, params={'rodada_aberta': rodada_aberta_int})
+
+    query_partidas = "SELECT * FROM cartola_2025.partidas WHERE rodada_id <= :rodada_aberta"
+    df_partidas = pd.read_sql(text(query_partidas), engine, params={'rodada_aberta': rodada_aberta_int})
 
     query_mercado = """
+    WITH partidas_rodada AS (
+        SELECT DISTINCT
+            rodada_id,
+            clube_casa_id,
+            clube_visitante_id
+        FROM cartola_2025.partidas
+        WHERE rodada_id = :rodada_aberta
+    )
     SELECT
-        mercado.atleta_id, mercado.rodada_id, mercado.apelido, mercado.clube_id, mercado.posicao_id, mercado.preco_num,
-    (mercado.preco_num - mercado.variacao_num) AS preco_anterior,
-        CASE WHEN mercado.clube_id = p.clube_casa_id THEN 1 ELSE 0 END AS joga_em_casa,
-        CASE WHEN mercado.clube_id = p.clube_casa_id THEN p.clube_visitante_id ELSE p.clube_casa_id END AS adversario_id
-FROM cartola_2025.mercado_atletas mercado
-    LEFT JOIN cartola_2025.partidas p ON mercado.rodada_id = p.rodada_id AND (mercado.clube_id = p.clube_casa_id OR mercado.clube_id = p.clube_visitante_id)
-    WHERE mercado.status_id = 7;
+        mercado.atleta_id,
+        mercado.rodada_id,
+        mercado.apelido,
+        mercado.clube_id,
+        mercado.posicao_id,
+        mercado.preco_num,
+        mercado.variacao_num,
+        (mercado.preco_num - mercado.variacao_num) AS preco_anterior,
+        CASE WHEN mercado.clube_id = partidas_rodada.clube_casa_id THEN 1 ELSE 0 END AS joga_em_casa,
+        CASE
+            WHEN mercado.clube_id = partidas_rodada.clube_casa_id THEN partidas_rodada.clube_visitante_id
+            ELSE partidas_rodada.clube_casa_id
+        END AS adversario_id
+    FROM cartola_2025.mercado_atletas mercado
+    LEFT JOIN partidas_rodada
+        ON mercado.rodada_id = partidas_rodada.rodada_id
+        AND (mercado.clube_id = partidas_rodada.clube_casa_id OR mercado.clube_id = partidas_rodada.clube_visitante_id)
+    WHERE mercado.status_id = 7
+      AND mercado.rodada_id = :rodada_aberta;
     """
-    df_mercado = pd.read_sql(text(query_mercado), engine)
+    df_mercado = pd.read_sql(text(query_mercado), engine, params={'rodada_aberta': rodada_aberta_int})
 
     if df_historico.empty or df_mercado.empty or df_partidas.empty:
         print("Dados históricos, de partidas ou de mercado não encontrados.")
@@ -41,12 +70,21 @@ FROM cartola_2025.mercado_atletas mercado
         return pd.DataFrame(), pd.DataFrame()
 
     # 3. Enriquecer dados históricos com informação de 'joga_em_casa'
-    df_casa = df_partidas[['rodada_id', 'clube_casa_id']].rename(columns={'clube_casa_id': 'clube_id'})
+    df_casas = df_partidas[['rodada_id', 'clube_casa_id']].rename(columns={'clube_casa_id': 'clube_id'})
+    df_casa = df_casas.drop_duplicates(subset=['rodada_id', 'clube_id']).copy()
     df_casa['joga_em_casa'] = 1
-    df_visitante = df_partidas[['rodada_id', 'clube_visitante_id']].rename(columns={'clube_visitante_id': 'clube_id'})
+    df_visitantes = df_partidas[['rodada_id', 'clube_visitante_id']].rename(columns={'clube_visitante_id': 'clube_id'})
+    df_visitante = df_visitantes.drop_duplicates(subset=['rodada_id', 'clube_id']).copy()
     df_visitante['joga_em_casa'] = 0
     df_partidas_flat = pd.concat([df_casa, df_visitante], ignore_index=True)
-    df_historico = pd.merge(df_historico, df_partidas_flat, left_on=['rodada', 'clube_id'], right_on=['rodada_id', 'clube_id'], how='left')
+    df_partidas_flat = df_partidas_flat.drop_duplicates(subset=['rodada_id', 'clube_id'])
+    df_historico = pd.merge(
+        df_historico,
+        df_partidas_flat,
+        left_on=['rodada', 'clube_id'],
+        right_on=['rodada_id', 'clube_id'],
+        how='left'
+    )
 
     # 4. Engenharia de Features no histórico
     scouts = ['G','A','FT','FF','FD','FS','PS','I','PP','DS','SG','DD','DP','GS','GC','FC','CA','CV','PI']
