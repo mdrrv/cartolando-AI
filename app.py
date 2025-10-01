@@ -91,12 +91,16 @@ def main():
         
         # PASSO 3: Otimização da Escalação
         print("\nPASSO 3: Otimização da Escalação")
-        otimizar_escalacao(
+        df_time_escalado, formacao_final, pontuacao_final, df_banco = otimizar_escalacao(
             df_jogadores=df_com_previsao,
-            cartoletas=restricoes['cartoletas'],
+            cartolas=restricoes['cartoletas'],
             usar_tudo=restricoes['usar_tudo'],
             engine=engine
         )
+
+        if df_time_escalado is None:
+            print("Não foi possível escalar um time titular. Verifique as restrições e o pool de jogadores.")
+
 
     elif restricoes['foco'] == 2:
         print("\nFoco: Valorização (previsão ainda não implementada)")

@@ -22,7 +22,7 @@ def gerar_features_para_modelo(engine):
         CASE WHEN mercado.clube_id = p.clube_casa_id THEN p.clube_visitante_id ELSE p.clube_casa_id END AS adversario_id
 FROM cartola_2025.mercado_atletas mercado
     LEFT JOIN cartola_2025.partidas p ON mercado.rodada_id = p.rodada_id AND (mercado.clube_id = p.clube_casa_id OR mercado.clube_id = p.clube_visitante_id)
-    WHERE mercado.status_id = 6;
+    WHERE mercado.status_id = 7;
     """
     df_mercado = pd.read_sql(text(query_mercado), engine)
 

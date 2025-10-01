@@ -47,9 +47,9 @@ def otimizar_escalacao(df_jogadores: pd.DataFrame, cartolas: float, engine, usar
     # --- Adicionar as restrições ---
     # 1. Custo total do time não pode exceder as cartolas
     prob += lpSum(df_jogadores.loc[i, 'preco_num'] * jogadores_vars[i] for i in df_jogadores.index) <= cartolas, "Custo_Total"
-    if usar_tudo:
-        # Se o usuário quiser usar o máximo de cartoletas, adicionamos uma restrição para o custo ser próximo do total
-        prob += lpSum(df_jogadores.loc[i, 'preco_num'] * jogadores_vars[i] for i in df_jogadores.index) >= cartolas * 0.98, "Custo_Minimo"
+    # if usar_tudo:
+    #     # Se o usuário quiser usar o máximo de cartoletas, adicionamos uma restrição para o custo ser próximo do total
+    #     prob += lpSum(df_jogadores.loc[i, 'preco_num'] * jogadores_vars[i] for i in df_jogadores.index) >= cartolas * 0.98, "Custo_Minimo"
 
     # 2. Exatamente 11 jogadores + 1 técnico
     prob += lpSum(jogadores_vars[i] for i in df_jogadores.index if df_jogadores.loc[i, 'posicao_id'] != 6) == 11, "Total_Jogadores_Linha"
@@ -135,8 +135,49 @@ def otimizar_escalacao(df_jogadores: pd.DataFrame, cartolas: float, engine, usar
         print(f"Custo Total: C$ {custo_total:.2f}")
         print(f"\nJogadores Escalados:")
         print(df_display.to_string()) # Usar to_string() para melhor formatação
-        
-        return df_time, formacao, objetivo_total_final
+
+        # --- Seleção do Banco de Reservas ---
+        print(f"\n--- Banco de Reservas Sugerido ---")
+        df_nao_escalados = df_jogadores[~df_jogadores.index.isin(df_time.index)].copy()
+        banco_reservas = []
+        posicoes_reserva = {1: 'Goleiro', 2: 'Lateral', 3: 'Zagueiro', 4: 'Meia', 5: 'Atacante'} # Exclui Técnico
+
+        for pos_id, pos_nome in posicoes_reserva.items():
+            jogadores_posicao = df_nao_escalados[df_nao_escalados['posicao_id'] == pos_id]
+            if not jogadores_posicao.empty:
+                # Seleciona o mais barato da posição
+                reserva = jogadores_posicao.sort_values(by='preco_num').iloc[0]
+                banco_reservas.append(reserva)
+            else:
+                banco_reservas.append(pd.Series({'apelido': f'N/A ({pos_nome})', 'posicao': pos_nome, 'preco_num': 0.0, objective_column: 0.0}))
+
+        if banco_reservas:
+            df_banco = pd.DataFrame(banco_reservas)
+            df_banco['posicao_id'] = pd.Categorical(
+                df_banco['posicao_id'],
+                categories=[1, 3, 2, 4, 5], # Ordem das posições no banco
+                ordered=True
+            )
+            df_banco = df_banco.sort_values('posicao_id')
+            
+            # Adiciona uma linha de total ao DataFrame do banco
+            custo_total_banco = df_banco['preco_num'].sum()
+            objetivo_total_banco = df_banco[objective_column].sum()
+            total_banco_row = pd.DataFrame([{
+                'apelido': '--- TOTAL BANCO ---',
+                'posicao': '',
+                'clube_nome': '',
+                'partida': '',
+                'preco_num': custo_total_banco,
+                objective_column: objetivo_total_banco
+            }])
+            df_banco_display = pd.concat([df_banco[display_cols[:6]], total_banco_row], ignore_index=True)
+            print(df_banco_display.to_string())
+        else:
+            print("Nenhum jogador disponível para o banco de reservas.")
+        # --- Fim Seleção Banco de Reservas ---
+
+        return df_time, formacao, objetivo_total_final, df_banco
     else:
         print(f"\nNão foi possível encontrar uma escalação ótima com as restrições definidas.")
-        return None, None, None
+        return None, None, None, None
