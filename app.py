@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 from src.data.data_fetcher import update_all_data, get_mercado_status
 from src.features.feature_builder import gerar_features_para_modelo
 from src.ui.cli import fazer_perguntas
-from src.models.predict import train_model, load_model, predict_scores
+from src.models.predict import train_model, load_model, predict_scores, BackpropCalibrator
 from src.models.optimization import otimizar_escalacao
 import pandas as pd
 
@@ -85,8 +85,14 @@ def main():
             print("\nModelo de previsão de valorização ainda não implementado. Treine o modelo de pontuação primeiro.")
             return
 
+    calibrator = None
+    if models and restricoes['foco'] == 1 and not df_train.empty:
+        calibrator = BackpropCalibrator.from_history(df_train, models)
+        if calibrator and not calibrator.bias_by_position.empty:
+            calibrator.report()
+
     if models and restricoes['foco'] == 1:
-        df_com_previsao = predict_scores(df_predict.copy(), models) # .copy() para evitar SettingWithCopyWarning
+        df_com_previsao = predict_scores(df_predict.copy(), models, calibrator=calibrator) # .copy() para evitar SettingWithCopyWarning
         print(f"Atletas com pontuação prevista: {len(df_com_previsao)}")
         
         # PASSO 3: Otimização da Escalação

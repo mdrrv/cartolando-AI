@@ -110,19 +110,29 @@ def otimizar_escalacao(df_jogadores: pd.DataFrame, cartolas: float, engine, usar
         # Adiciona uma linha de total ao DataFrame para exibição
         display_cols = ['apelido', 'posicao', 'clube_nome', 'partida', 'preco_num', objective_column]
         df_display = df_time[display_cols].reset_index(drop=True)
+        df_display['preco_num'] = df_display['preco_num'].map(lambda x: f"{x:.2f}")
+        df_display[objective_column] = df_display[objective_column].map(lambda x: f"{x:.2f}")
         
         # Marcar o capitão no DataFrame de exibição (APENAS se o foco for pontuação)
         if objective_column == 'pontuacao_prevista':
             display_capitao_idx = df_display[df_display['apelido'] == df_time.loc[capitao_idx, 'apelido']].index[0]
+            pontuacao_capitao = df_time.loc[capitao_idx, 'pontuacao_prevista']
+            pontuacao_capitao_final = pontuacao_capitao * 1.5
             df_display.loc[display_capitao_idx, 'apelido'] += ' (C)'
+            df_display.loc[display_capitao_idx, objective_column] = f"{pontuacao_capitao:.2f} ({pontuacao_capitao_final:.2f})"
+
+        if objective_column == 'pontuacao_prevista':
+            objetivo_total_display = f"{objetivo_total:.2f} ({objetivo_total_final:.2f})"
+        else:
+            objetivo_total_display = f"{objetivo_total_final:.2f}"
 
         total_row = pd.DataFrame([{
             'apelido': '--- TOTAL ---',
             'posicao': '',
             'clube_nome': '',
             'partida': '',
-            'preco_num': custo_total,
-            objective_column: objetivo_total_final
+            'preco_num': f"{custo_total:.2f}",
+            objective_column: objetivo_total_display
         }])
         df_display = pd.concat([df_display, total_row], ignore_index=True)
 
